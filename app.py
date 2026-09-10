@@ -170,38 +170,71 @@ Nunca asumir automáticamente que significan confirmar el pedido.
 Después de confirmar no hagas preguntas ni ofertas.
 """
 
+def extraer_texto(valor):
+    if valor is None:
+        return ""
+
+    if isinstance(valor, str):
+        return valor
+
+    if isinstance(valor, dict):
+        if "text" in valor:
+            return extraer_texto(valor["text"])
+
+        if "content" in valor:
+            return extraer_texto(valor["content"])
+
+        return str(valor)
+
+    if isinstance(valor, (list, tuple)):
+        partes = []
+
+        for elemento in valor:
+            texto = extraer_texto(elemento)
+
+            if texto:
+                partes.append(texto)
+
+        return "".join(partes)
+
+    return str(valor)
+
+
 def responder(message, history):
     mensajes = []
 
-    for item in history:
+    for item in history or []:
         if isinstance(item, dict):
             role = item.get("role")
-            content = item.get("content", "")
+            contenido = extraer_texto(item.get("content", ""))
 
-            if isinstance(content, dict):
-                content = content.get("text", str(content))
-
-            if role in ("user", "assistant"):
+            if role in ("user", "assistant") and contenido:
                 mensajes.append({
                     "role": role,
-                    "content": str(content)
+                    "content": contenido
                 })
 
         elif isinstance(item, (list, tuple)) and len(item) >= 2:
-            if item[0]:
+            usuario = extraer_texto(item[0])
+            asistente = extraer_texto(item[1])
+
+            if usuario:
                 mensajes.append({
                     "role": "user",
-                    "content": str(item[0])
+                    "content": usuario
                 })
-            if item[1]:
+
+            if asistente:
                 mensajes.append({
                     "role": "assistant",
-                    "content": str(item[1])
+                    "content": asistente
                 })
+
+    mensaje_actual = extraer_texto(message)
 
     mensajes.append({
         "role": "user",
-        "content": str(message)
+        "content": mensaje_actual
     })
 
     response = client.responses.create(
@@ -210,18 +243,7 @@ def responder(message, history):
         input=mensajes
     )
 
-    texto = response.output_text
-
-    if isinstance(texto, list):
-        partes = []
-        for item in texto:
-            if isinstance(item, dict) and "text" in item:
-                partes.append(item["text"])
-            else:
-                partes.append(str(item))
-        texto = "".join(partes)
-
-    return str(texto)
+    return response.output_text
 
 demo = gr.ChatInterface(
     fn=responder,
