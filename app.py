@@ -195,7 +195,7 @@ def responder(message, history):
 
 demo = gr.ChatInterface(
     fn=responder,
-    type="messages",
+  
     title="Home Burger Assistant 🍔",
     description="Prueba el asistente como si fueras un cliente."
 )
