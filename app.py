@@ -174,12 +174,10 @@ def responder(message, history):
     mensajes = []
 
     for item in history:
-        # Formato nuevo de Gradio
         if isinstance(item, dict):
             role = item.get("role")
             content = item.get("content", "")
 
-            # Algunos contenidos llegan como {"text": "..."}
             if isinstance(content, dict):
                 content = content.get("text", str(content))
 
@@ -189,7 +187,6 @@ def responder(message, history):
                     "content": str(content)
                 })
 
-        # Formato antiguo de Gradio: [usuario, asistente]
         elif isinstance(item, (list, tuple)) and len(item) >= 2:
             if item[0]:
                 mensajes.append({
@@ -213,18 +210,18 @@ def responder(message, history):
         input=mensajes
     )
 
-  texto = response.output_text
+    texto = response.output_text
 
-if isinstance(texto, list):
-    partes = []
-    for item in texto:
-        if isinstance(item, dict) and "text" in item:
-            partes.append(item["text"])
-        else:
-            partes.append(str(item))
-    texto = "".join(partes)
+    if isinstance(texto, list):
+        partes = []
+        for item in texto:
+            if isinstance(item, dict) and "text" in item:
+                partes.append(item["text"])
+            else:
+                partes.append(str(item))
+        texto = "".join(partes)
 
-return str(texto)
+    return str(texto)
 
 demo = gr.ChatInterface(
     fn=responder,
