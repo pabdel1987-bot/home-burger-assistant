@@ -174,16 +174,22 @@ def responder(message, history):
     mensajes = []
 
     for item in history:
-        if isinstance(item, dict):
-            role = item.get("role")
-            content = item.get("content", "")
-            if role in ("user", "assistant"):
+        if isinstance(item, (list, tuple)) and len(item) >= 2:
+            if item[0]:
                 mensajes.append({
-                    "role": role,
-                    "content": str(content)
+                    "role": "user",
+                    "content": str(item[0])
+                })
+            if item[1]:
+                mensajes.append({
+                    "role": "assistant",
+                    "content": str(item[1])
                 })
 
-    mensajes.append({"role": "user", "content": message})
+    mensajes.append({
+        "role": "user",
+        "content": str(message)
+    })
 
     response = client.responses.create(
         model="gpt-5.4-mini",
@@ -191,11 +197,11 @@ def responder(message, history):
         input=mensajes
     )
 
-    return response.output_text
+    texto = response.output_text
+    return texto
 
 demo = gr.ChatInterface(
     fn=responder,
-  
     title="Home Burger Assistant 🍔",
     description="Prueba el asistente como si fueras un cliente."
 )
