@@ -174,7 +174,23 @@ def responder(message, history):
     mensajes = []
 
     for item in history:
-        if isinstance(item, (list, tuple)) and len(item) >= 2:
+        # Formato nuevo de Gradio
+        if isinstance(item, dict):
+            role = item.get("role")
+            content = item.get("content", "")
+
+            # Algunos contenidos llegan como {"text": "..."}
+            if isinstance(content, dict):
+                content = content.get("text", str(content))
+
+            if role in ("user", "assistant"):
+                mensajes.append({
+                    "role": role,
+                    "content": str(content)
+                })
+
+        # Formato antiguo de Gradio: [usuario, asistente]
+        elif isinstance(item, (list, tuple)) and len(item) >= 2:
             if item[0]:
                 mensajes.append({
                     "role": "user",
@@ -197,8 +213,7 @@ def responder(message, history):
         input=mensajes
     )
 
-    texto = response.output_text
-    return texto
+    return response.output_text
 
 demo = gr.ChatInterface(
     fn=responder,
