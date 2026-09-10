@@ -213,7 +213,18 @@ def responder(message, history):
         input=mensajes
     )
 
-    return response.output_text
+  texto = response.output_text
+
+if isinstance(texto, list):
+    partes = []
+    for item in texto:
+        if isinstance(item, dict) and "text" in item:
+            partes.append(item["text"])
+        else:
+            partes.append(str(item))
+    texto = "".join(partes)
+
+return str(texto)
 
 demo = gr.ChatInterface(
     fn=responder,
