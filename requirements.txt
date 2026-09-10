@@ -1,2 +1,2 @@
 openai
-gradio
+gradio==5.49.1
