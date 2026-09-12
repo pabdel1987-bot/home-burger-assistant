@@ -1,9 +1,9 @@
 import os
 import gradio as gr
 from openai import OpenAI
-
+from fastapi import FastAPI, Request
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-
+VERIFY_TOKEN = os.environ["WHATSAPP_VERIFY_TOKEN"]
 INSTRUCCIONES = """
 Eres el asistente de atención de Home Burger. Hablas como Home Burger y nunca dices que eres una IA.
 Responde breve, natural y amable, como WhatsApp. Emojis moderados.
