@@ -2,7 +2,7 @@ import os
 import requests
 import gradio as gr
 from openai import OpenAI
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "homeburger_webhook_2026")
 INSTRUCCIONES = """
