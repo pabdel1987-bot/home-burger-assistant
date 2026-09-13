@@ -299,13 +299,28 @@ def responder(message, history):
 
     return response.output_text
 
+app = FastAPI()
+
+@app.get("/webhook")
+async def verificar_webhook(request: Request):
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
+
+    if mode == "subscribe" and token == VERIFY_TOKEN:
+        return int(challenge)
+
+    return {"error": "Verification failed"}
+
 demo = gr.ChatInterface(
     fn=responder,
     title="Home Burger Assistant 🍔",
     description="Prueba el asistente como si fueras un cliente."
 )
 
+app = gr.mount_gradio_app(app, demo, path="/")
+
 if __name__ == "__main__":
+    import uvicorn
     port = int(os.environ.get("PORT", 10000))
-    demo.launch(
-       
+    uvicorn.run(app, host="0.0.0.0", port=port)
