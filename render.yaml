@@ -1,7 +1,25 @@
-services:
-  - type: web
-    name: home-burger-assistant
-    env: python
-    envVars:
-      - key: WHATSAPP_VERIFY_TOKEN
-        fromGroup: home-burger-env
+# Exported from Render on 2026-09-13T16:25:30Z
+version: "1"
+projects:
+- name: My project
+  environments:
+  - name: Production
+    services:
+    - type: web
+      name: home-burger-assistant
+      runtime: python
+      repo: https://github.com/pabdel1987-bot/home-burger-assistant
+      plan: free
+      envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+            - key: WHATSAPP_VERIFY_TOKEN
+      sync: false
+    - key: WHATSAPP_ACCESS_TOKEN
+      sync: false
+    - key: WHATSAPP_PHONE_NUMBER_ID
+      sync: false
+      region: ohio
+      buildCommand: pip install -r requirements.txt
+      startCommand: python app.py
+      autoDeployTrigger: commit
