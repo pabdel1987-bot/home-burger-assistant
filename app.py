@@ -1,4 +1,5 @@
 import os
+import requests
 import gradio as gr
 from openai import OpenAI
 from fastapi import FastAPI, Request
@@ -311,6 +312,51 @@ async def verificar_webhook(request: Request):
         return int(challenge)
 
     return {"error": "Verification failed"}
+
+@app.post("/webhook")
+async def recibir_whatsapp(request: Request):
+    data = await request.json()
+
+    try:
+        value = data["entry"][0]["changes"][0]["value"]
+
+        if "messages" not in value:
+            return {"status": "ok"}
+
+        mensaje = value["messages"][0]
+
+        if mensaje.get("type") != "text":
+            return {"status": "ok"}
+
+        numero_cliente = mensaje["from"]
+        texto_cliente = mensaje["text"]["body"]
+
+        respuesta = responder(texto_cliente, [])
+
+        access_token = os.environ["WHATSAPP_ACCESS_TOKEN"]
+        phone_number_id = os.environ["WHATSAPP_PHONE_NUMBER_ID"]
+
+        url = f"https://graph.facebook.com/v26.0/{phone_number_id}/messages"
+
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": numero_cliente,
+            "type": "text",
+            "text": {"body": respuesta}
+        }
+
+        requests.post(url, headers=headers, json=payload, timeout=20)
+
+        return {"status": "ok"}
+
+    except Exception as e:
+        print("Error WhatsApp:", e)
+        return {"status": "error"}S
 
 demo = gr.ChatInterface(
     fn=responder,
