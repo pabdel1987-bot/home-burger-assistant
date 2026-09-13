@@ -1,20 +1,20 @@
-# Exported from Render on 2026-09-13T16:25:30Z
 version: "1"
+
 projects:
-- name: My project
-  environments:
-  - name: Production
-    services:
-    - type: web
-      name: home-burger-assistant
-      runtime: python
-      repo: https://github.com/pabdel1987-bot/home-burger-assistant
-      plan: free
-         envVars:
-      - key: OPENAI_API_KEY
-        sync: false
-      - fromGroup: home-burger-env
-      region: ohio
-      buildCommand: pip install -r requirements.txt
-      startCommand: python app.py
-      autoDeployTrigger: commit
+  - name: My project
+    environments:
+      - name: Production
+        services:
+          - type: web
+            name: home-burger-assistant
+            runtime: python
+            repo: https://github.com/pabdel1987-bot/home-burger-assistant
+            plan: free
+            envVars:
+              - key: OPENAI_API_KEY
+                sync: false
+              - fromGroup: home-burger-env
+            region: ohio
+            buildCommand: pip install -r requirements.txt
+            startCommand: python app.py
+            autoDeployTrigger: commit
