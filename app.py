@@ -301,7 +301,26 @@ def responder(message, history):
     return response.output_text
 
 app = FastAPI()
-
+@app.get("/privacy")
+async def privacy_policy():
+    return Response(
+        content="""
+        <html>
+        <head><title>Política de Privacidad - Home Burger</title></head>
+        <body style="font-family:Arial;max-width:800px;margin:40px auto;padding:20px;line-height:1.6">
+        <h1>Política de Privacidad de Home Burger</h1>
+        <p>Home Burger utiliza WhatsApp para atender consultas y gestionar pedidos de sus clientes.</p>
+        <p>Podemos recibir información proporcionada voluntariamente por el cliente, como nombre, número de teléfono, dirección de entrega y datos relacionados con su pedido.</p>
+        <p>Esta información se utiliza únicamente para brindar atención, procesar pedidos, coordinar entregas y mejorar nuestro servicio.</p>
+        <p>No vendemos ni comercializamos la información personal de nuestros clientes.</p>
+        <p>Los datos pueden ser procesados mediante proveedores tecnológicos necesarios para prestar el servicio, incluyendo servicios de mensajería y procesamiento automatizado.</p>
+        <p>Los clientes pueden solicitar información, corrección o eliminación de sus datos contactando directamente a Home Burger por WhatsApp.</p>
+        <p>Última actualización: septiembre de 2026.</p>
+        </body>
+        </html>
+        """,
+        media_type="text/html"
+    )
 @app.get("/webhook")
 async def verificar_webhook(request: Request):
     mode = request.query_params.get("hub.mode")
