@@ -2,3 +2,4 @@ openai
 gradio
 fastapi
 uvicorn
+requests
