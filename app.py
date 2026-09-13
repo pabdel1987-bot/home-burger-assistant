@@ -356,7 +356,7 @@ async def recibir_whatsapp(request: Request):
 
     except Exception as e:
         print("Error WhatsApp:", e)
-        return {"status": "error"}S
+        return {"status": "error"}
 
 demo = gr.ChatInterface(
     fn=responder,
