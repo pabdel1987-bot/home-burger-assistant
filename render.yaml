@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: home-burger-assistant
+    env: python
+    envVars:
+      - key: WHATSAPP_VERIFY_TOKEN
+        fromGroup: home-burger-env
