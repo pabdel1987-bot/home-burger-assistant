@@ -369,10 +369,11 @@ async def recibir_whatsapp(request: Request):
             "text": {"body": respuesta}
         }
 
-      r = requests.post(url, headers=headers, json=payload, timeout=20)
+r = requests.post(url, headers=headers, json=payload, timeout=20)
 print("WhatsApp status:", r.status_code)
 print("WhatsApp response:", r.text)
 r.raise_for_status()
+             
 
         return {"status": "ok"}
 
