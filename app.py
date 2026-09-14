@@ -368,7 +368,52 @@ async def recibir_whatsapp(request: Request):
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
         }
+       texto_normalizado = texto_cliente.lower().strip()
 
+    pedidos_carta = [
+        "carta", "menú", "menu",
+        "precios", "precios xfa", "precios porfa", "precios porfis",
+        "me pasas los precios", "pásame los precios", "pasame los precios",
+        "quiero ver los precios",
+        "qué tienen", "que tienen",
+        "qué venden", "que venden",
+        "qué opciones tienen", "que opciones tienen",
+        "qué hamburguesas tienen", "que hamburguesas tienen",
+        "qué burgers tienen", "que burgers tienen"
+    ]
+
+    productos_concretos = [
+        "consentida", "doradita", "indomable", "soberana",
+        "doble con queso", "pollo clásico", "pollo clasico",
+        "filete con cheddar", "filete royal", "despeinado",
+        "salchi clásica", "salchi clasica", "salchipollo",
+        "alitas bbq", "papas clásicas", "papas clasicas",
+        "papas familiares"
+    ]
+
+    enviar_carta = (
+        any(frase in texto_normalizado for frase in pedidos_carta)
+        and not any(producto in texto_normalizado for producto in productos_concretos)
+    )
+
+    if enviar_carta:
+        payload_imagen = {
+            "messaging_product": "whatsapp",
+            "to": numero_cliente,
+            "type": "image",
+            "image": {
+                "link": "https://home-burger-assistant.onrender.com/carta"
+            }
+        }
+
+        r_imagen = requests.post(
+            url,
+            headers=headers,
+            json=payload_imagen,
+            timeout=20
+        )
+        print("WhatsApp imagen status:", r_imagen.status_code)
+        print("WhatsApp imagen response:", r_imagen.text)
         payload = {
             "messaging_product": "whatsapp",
             "to": numero_cliente,
