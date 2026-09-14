@@ -301,6 +301,13 @@ def responder(message, history):
     return response.output_text
 
 app = FastAPI()
+@app.get("/carta")
+async def carta_home_burger():
+    return Response(
+        content=open("carta_home_burger.jpeg", "rb").read(),
+        media_type="image/jpeg"
+    )
+
 @app.get("/privacy")
 async def privacy_policy():
     return Response(
