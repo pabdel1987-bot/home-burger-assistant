@@ -134,8 +134,14 @@ Martes a sábado de 6:00 pm a 11:00 pm.
 Un pedido puede ingresar a las 11:00 pm.
 A partir de las 11:01 pm está fuera del horario habitual.
 
+CARTA Y PRECIOS GENERALES:
+Si el cliente pide la carta, menú o precios de forma general (por ejemplo: "¿tienes carta?", "¿dónde están tus precios?", "¿cuánto cuestan?", "¿qué precios tienen?", "pásame la carta", "quiero ver el menú"), responde únicamente:
+"Claro, te envío la carta 🍔"
+No escribas ni enumeres los precios en ese caso. La imagen de la carta se enviará automáticamente.
+Si pregunta por el precio de un producto específico, responde solo ese precio y NO envíes la carta.
+
 PREGUNTAS PUNTUALES:
-Si el cliente pregunta únicamente precio, ingrediente, horario, ubicación u otro dato puntual, responde SOLO lo necesario.
+Si el cliente pregunta únicamente el precio de un producto específico, ingrediente, horario, ubicación u otro dato puntual, responde SOLO lo necesario.
 No agregues ofertas, combos, llamadas a comprar ni "si deseas..." innecesarios.
 Ejemplo:
 "¿Cuánto cuesta la Consentida?"
@@ -366,11 +372,19 @@ async def recibir_whatsapp(request: Request):
 
         texto_normalizado = texto_cliente.lower().strip()
         pedidos_carta = [
-            "carta", "menú", "menu", "precios", "precios xfa",
+            "carta", "menú", "menu", "precios", "precio", "precios xfa",
             "precios porfa", "precios porfis", "me pasas los precios",
-            "pásame los precios", "pasame los precios", "quiero ver los precios",
-            "qué tienen", "que tienen", "qué venden", "que venden",
-            "qué opciones tienen", "que opciones tienen",
+            "me pasas la carta", "me pasa la carta", "pásame los precios",
+            "pasame los precios", "pásame la carta", "pasame la carta",
+            "envíame la carta", "enviame la carta", "mándame la carta",
+            "mandame la carta", "quiero ver los precios", "quiero ver la carta",
+            "quiero ver el menú", "quiero ver el menu", "tienes carta",
+            "tienen carta", "tienes menú", "tienes menu", "tienen menú",
+            "tienen menu", "dónde están tus precios", "donde estan tus precios",
+            "dónde están los precios", "donde estan los precios",
+            "cuánto cuestan", "cuanto cuestan", "qué precios tienen",
+            "que precios tienen", "qué tienen", "que tienen", "qué venden",
+            "que venden", "qué opciones tienen", "que opciones tienen",
             "qué hamburguesas tienen", "que hamburguesas tienen",
             "qué burgers tienen", "que burgers tienen"
         ]
@@ -388,6 +402,19 @@ async def recibir_whatsapp(request: Request):
         )
 
         if enviar_carta:
+            payload_texto_carta = {
+                "messaging_product": "whatsapp",
+                "to": numero_cliente,
+                "type": "text",
+                "text": {"body": "Claro, te envío la carta 🍔"}
+            }
+            r_texto_carta = requests.post(
+                url, headers=headers, json=payload_texto_carta, timeout=20
+            )
+            print("WhatsApp texto carta status:", r_texto_carta.status_code)
+            print("WhatsApp texto carta response:", r_texto_carta.text)
+            r_texto_carta.raise_for_status()
+
             payload_imagen = {
                 "messaging_product": "whatsapp",
                 "to": numero_cliente,
@@ -398,6 +425,7 @@ async def recibir_whatsapp(request: Request):
             print("WhatsApp imagen status:", r_imagen.status_code)
             print("WhatsApp imagen response:", r_imagen.text)
             r_imagen.raise_for_status()
+            return {"status": "ok"}
 
         payload = {
             "messaging_product": "whatsapp",
