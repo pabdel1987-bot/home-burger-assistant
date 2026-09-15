@@ -54,10 +54,10 @@ BEBIDAS:
 Coca-Cola S/4
 Inca Kola S/4
 Fanta S/4
-No se vende agua.
+Agua S/4 (opción de upsell).
 
 Si preguntan genéricamente cuánto cuesta la bebida:
-"Las bebidas cuestan S/4 🥤 Coca-Cola, Inca Kola y Fanta."
+"Las bebidas cuestan S/4 🥤 Coca-Cola, Inca Kola, Fanta y agua."
 
 COMBO INDIVIDUAL:
 Consentida S/19.90
@@ -110,7 +110,7 @@ Construye siempre la pregunta según los productos REALES del pedido.
 
 BEBIDA:
 Después de salsas:
-"¿Deseas agregar una bebida por S/4? 🥤 Coca-Cola, Inca Kola o Fanta."
+"¿Deseas agregar una bebida por S/4? 🥤 Coca-Cola, Inca Kola, Fanta o agua."
 Si dice no, no insistas.
 Si el combo ya incluye bebida, pregunta cuál desea.
 
@@ -345,88 +345,70 @@ async def recibir_whatsapp(request: Request):
 
     try:
         value = data["entry"][0]["changes"][0]["value"]
-
         if "messages" not in value:
             return {"status": "ok"}
 
         mensaje = value["messages"][0]
-
         if mensaje.get("type") != "text":
             return {"status": "ok"}
 
         numero_cliente = mensaje["from"]
         texto_cliente = mensaje["text"]["body"]
-
         respuesta = responder(texto_cliente, [])
 
         access_token = os.environ["WHATSAPP_ACCESS_TOKEN"]
         phone_number_id = os.environ["WHATSAPP_PHONE_NUMBER_ID"]
-
         url = f"https://graph.facebook.com/v26.0/{phone_number_id}/messages"
-
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
         }
-       texto_normalizado = texto_cliente.lower().strip()
 
-    pedidos_carta = [
-        "carta", "menú", "menu",
-        "precios", "precios xfa", "precios porfa", "precios porfis",
-        "me pasas los precios", "pásame los precios", "pasame los precios",
-        "quiero ver los precios",
-        "qué tienen", "que tienen",
-        "qué venden", "que venden",
-        "qué opciones tienen", "que opciones tienen",
-        "qué hamburguesas tienen", "que hamburguesas tienen",
-        "qué burgers tienen", "que burgers tienen"
-    ]
-
-    productos_concretos = [
-        "consentida", "doradita", "indomable", "soberana",
-        "doble con queso", "pollo clásico", "pollo clasico",
-        "filete con cheddar", "filete royal", "despeinado",
-        "salchi clásica", "salchi clasica", "salchipollo",
-        "alitas bbq", "papas clásicas", "papas clasicas",
-        "papas familiares"
-    ]
-
-    enviar_carta = (
-        any(frase in texto_normalizado for frase in pedidos_carta)
-        and not any(producto in texto_normalizado for producto in productos_concretos)
-    )
-
-    if enviar_carta:
-        payload_imagen = {
-            "messaging_product": "whatsapp",
-            "to": numero_cliente,
-            "type": "image",
-            "image": {
-                "link": "https://home-burger-assistant.onrender.com/carta"
-            }
-        }
-
-        r_imagen = requests.post(
-            url,
-            headers=headers,
-            json=payload_imagen,
-            timeout=20
+        texto_normalizado = texto_cliente.lower().strip()
+        pedidos_carta = [
+            "carta", "menú", "menu", "precios", "precios xfa",
+            "precios porfa", "precios porfis", "me pasas los precios",
+            "pásame los precios", "pasame los precios", "quiero ver los precios",
+            "qué tienen", "que tienen", "qué venden", "que venden",
+            "qué opciones tienen", "que opciones tienen",
+            "qué hamburguesas tienen", "que hamburguesas tienen",
+            "qué burgers tienen", "que burgers tienen"
+        ]
+        productos_concretos = [
+            "consentida", "doradita", "indomable", "soberana",
+            "doble con queso", "pollo clásico", "pollo clasico",
+            "filete con cheddar", "filete royal", "despeinado",
+            "salchi clásica", "salchi clasica", "salchipollo",
+            "alitas bbq", "papas clásicas", "papas clasicas",
+            "papas familiares"
+        ]
+        enviar_carta = (
+            any(frase in texto_normalizado for frase in pedidos_carta)
+            and not any(producto in texto_normalizado for producto in productos_concretos)
         )
-        print("WhatsApp imagen status:", r_imagen.status_code)
-        print("WhatsApp imagen response:", r_imagen.text)
+
+        if enviar_carta:
+            payload_imagen = {
+                "messaging_product": "whatsapp",
+                "to": numero_cliente,
+                "type": "image",
+                "image": {"link": "https://home-burger-assistant.onrender.com/carta"}
+            }
+            r_imagen = requests.post(url, headers=headers, json=payload_imagen, timeout=20)
+            print("WhatsApp imagen status:", r_imagen.status_code)
+            print("WhatsApp imagen response:", r_imagen.text)
+            r_imagen.raise_for_status()
+
         payload = {
             "messaging_product": "whatsapp",
             "to": numero_cliente,
             "type": "text",
             "text": {"body": respuesta}
         }
-
         r = requests.post(url, headers=headers, json=payload, timeout=20)
         print("WhatsApp status:", r.status_code)
         print("WhatsApp response:", r.text)
         r.raise_for_status()
-             
-
         return {"status": "ok"}
 
     except Exception as e:
