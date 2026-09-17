@@ -23,6 +23,8 @@ def obtener_cliente(telefono):
         params={"telefono": f"eq.{telefono}", "select": "*", "limit": "1"},
         timeout=20,
     )
+    if not r.ok:
+    print("SUPABASE ERROR GET:", r.status_code, r.text)
     r.raise_for_status()
     filas = r.json()
     return filas[0] if filas else None
