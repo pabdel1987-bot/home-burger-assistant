@@ -29,13 +29,15 @@ def obtener_cliente(telefono):
     filas = r.json()
     return filas[0] if filas else None
 
-def crear_cliente(telefono):
+
     r = requests.post(
         f"{SUPABASE_URL}/rest/v1/clientes",
         headers={**supabase_headers(), "Prefer": "return=representation"},
         json={"telefono": telefono},
         timeout=20,
     )
+   if not r.ok:
+    print("SUPABASE ERROR POST:", r.status_code, r.text)
     r.raise_for_status()
     filas = r.json()
     return filas[0] if filas else {"telefono": telefono}
