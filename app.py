@@ -1,10 +1,73 @@
 import os
 import requests
+import json
 import gradio as gr
 from openai import OpenAI
 from fastapi import FastAPI, Request, Response
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "homeburger_webhook_2026")
+SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
+SUPABASE_SECRET_KEY = os.environ["SUPABASE_SECRET_KEY"]
+
+def supabase_headers():
+    return {
+        "apikey": SUPABASE_SECRET_KEY,
+        "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
+        "Content-Type": "application/json",
+    }
+
+def obtener_cliente(telefono):
+    r = requests.get(
+        f"{SUPABASE_URL}/rest/v1/clientes",
+        headers=supabase_headers(),
+        params={"telefono": f"eq.{telefono}", "select": "*", "limit": "1"},
+        timeout=20,
+    )
+    r.raise_for_status()
+    filas = r.json()
+    return filas[0] if filas else None
+
+def crear_cliente(telefono):
+    r = requests.post(
+        f"{SUPABASE_URL}/rest/v1/clientes",
+        headers={**supabase_headers(), "Prefer": "return=representation"},
+        json={"telefono": telefono},
+        timeout=20,
+    )
+    r.raise_for_status()
+    filas = r.json()
+    return filas[0] if filas else {"telefono": telefono}
+
+def obtener_o_crear_cliente(telefono):
+    cliente = obtener_cliente(telefono)
+    return cliente if cliente else crear_cliente(telefono)
+
+def cargar_historial(cliente):
+    if not cliente:
+        return []
+    bruto = cliente.get("ultimo_pedido")
+    if not bruto:
+        return []
+    try:
+        datos = json.loads(bruto)
+        return datos if isinstance(datos, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+def guardar_historial(telefono, historial):
+    historial = historial[-24:]
+    r = requests.patch(
+        f"{SUPABASE_URL}/rest/v1/clientes",
+        headers=supabase_headers(),
+        params={"telefono": f"eq.{telefono}"},
+        json={
+            "ultimo_pedido": json.dumps(historial, ensure_ascii=False),
+            "updated_at": "now()",
+        },
+        timeout=20,
+    )
+    r.raise_for_status()
+
 INSTRUCCIONES = """
 Eres el asistente de atención de Home Burger. Hablas como Home Burger y nunca dices que eres una IA.
 Responde breve, natural y amable, como WhatsApp. Emojis moderados.
@@ -360,7 +423,16 @@ async def recibir_whatsapp(request: Request):
 
         numero_cliente = mensaje["from"]
         texto_cliente = mensaje["text"]["body"]
-        respuesta = responder(texto_cliente, [])
+
+        cliente = obtener_o_crear_cliente(numero_cliente)
+        historial = cargar_historial(cliente)
+        respuesta = responder(texto_cliente, historial)
+
+        historial_actualizado = historial + [
+            {"role": "user", "content": texto_cliente},
+            {"role": "assistant", "content": respuesta},
+        ]
+        guardar_historial(numero_cliente, historial_actualizado)
 
         access_token = os.environ["WHATSAPP_ACCESS_TOKEN"]
         phone_number_id = os.environ["WHATSAPP_PHONE_NUMBER_ID"]
