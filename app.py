@@ -30,7 +30,7 @@ def obtener_cliente(telefono):
     return filas[0] if filas else None
 
 
-   def crear_cliente(telefono):
+def crear_cliente(telefono):
     r = requests.post(
         f"{SUPABASE_URL}/rest/v1/clientes",
         headers={**supabase_headers(), "Prefer": "return=representation"},
