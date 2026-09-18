@@ -1,6 +1,7 @@
 import os
 import requests
 import json
+import re
 import gradio as gr
 from openai import OpenAI
 from fastapi import FastAPI, Request, Response
@@ -72,6 +73,68 @@ def guardar_historial(telefono, historial):
         timeout=20,
     )
     r.raise_for_status()
+
+
+def guardar_nombre(telefono, nombre):
+    r = requests.patch(
+        f"{SUPABASE_URL}/rest/v1/clientes",
+        headers=supabase_headers(),
+        params={"telefono": f"eq.{telefono}"},
+        json={"nombre": nombre, "updated_at": "now()"},
+        timeout=20,
+    )
+    r.raise_for_status()
+
+
+def ultimo_texto_asistente(historial):
+    for item in reversed(historial or []):
+        if isinstance(item, dict) and item.get("role") == "assistant":
+            return extraer_texto(item.get("content", ""))
+    return ""
+
+
+def asistente_pidio_nombre(historial):
+    ultimo = ultimo_texto_asistente(historial).lower()
+    return (
+        "cuál es tu nombre" in ultimo
+        or "cual es tu nombre" in ultimo
+        or "cómo te llamas" in ultimo
+        or "como te llamas" in ultimo
+    )
+
+
+def candidato_nombre_pendiente(historial):
+    ultimo = ultimo_texto_asistente(historial).strip()
+    m = re.match(r"^([A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]{2,40}),\s*¿?cierto\??", ultimo, re.IGNORECASE)
+    return m.group(1).strip() if m else None
+
+
+def evaluar_nombre(texto):
+    prompt = f"""
+El cliente de una hamburguesería acaba de responder a la pregunta por su nombre con:
+{json.dumps(texto, ensure_ascii=False)}
+
+Devuelve SOLO JSON válido con este formato:
+{{"es_nombre": true, "nombre": "Nombre", "sugerencia": null}}
+
+Reglas:
+- Si parece claramente un nombre, conserva lo que escribió, corrigiendo solo mayúsculas/minúsculas.
+- Si parece MUY probablemente un error de teclado de un nombre conocido, no lo corrijas silenciosamente:
+  pon en "nombre" exactamente lo escrito y en "sugerencia" el nombre probable.
+- Ejemplo: Jusn -> {{"es_nombre": true, "nombre": "Jusn", "sugerencia": "Juan"}}
+- Si no hay alta certeza de error, sugerencia debe ser null.
+- Si el texto no parece una respuesta de nombre, es_nombre debe ser false.
+"""
+    r = client.responses.create(
+        model="gpt-5.4-mini",
+        input=prompt,
+    )
+    try:
+        datos = json.loads(r.output_text.strip())
+    except Exception:
+        return {"es_nombre": False, "nombre": None, "sugerencia": None}
+    return datos
+
 
 INSTRUCCIONES = """
 Eres el asistente de atención de Home Burger. Hablas como Home Burger y nunca dices que eres una IA.
@@ -186,6 +249,8 @@ CLIENTES:
 Si es cliente nuevo, después de que el pedido haya avanzado pregunta en un momento natural:
 "Genial 😊 ¿Cuál es tu nombre?"
 Cuando responda, usa su nombre ocasionalmente, no en cada mensaje.
+Si acabas de preguntar el nombre, espera esa respuesta antes de continuar al resumen, pago o confirmación.
+Si el sistema ya dispone de un nombre confirmado, no vuelvas a preguntarlo.
 
 Si el sistema no dispone de su número, preguntar cuando corresponda:
 "¿Me brindas tu número para registrar tu ticket? 😊"
@@ -329,7 +394,7 @@ def extraer_texto(valor):
     return str(valor)
 
 
-def responder(message, history):
+def responder(message, history, nombre_cliente=None):
     mensajes = []
 
     for item in history or []:
@@ -366,9 +431,17 @@ def responder(message, history):
         "content": mensaje_actual
     })
 
+    instrucciones_actuales = INSTRUCCIONES
+    if nombre_cliente:
+        instrucciones_actuales += f"""
+DATOS PERSISTENTES DEL CLIENTE:
+- Nombre confirmado: {nombre_cliente}
+- No vuelvas a preguntarle su nombre salvo que el propio cliente indique que quiere corregirlo.
+"""
+
     response = client.responses.create(
         model="gpt-5.4-mini",
-        instructions=INSTRUCCIONES,
+        instructions=instrucciones_actuales,
         input=mensajes
     )
 
@@ -431,7 +504,36 @@ async def recibir_whatsapp(request: Request):
 
         cliente = obtener_o_crear_cliente(numero_cliente)
         historial = cargar_historial(cliente)
-        respuesta = responder(texto_cliente, historial)
+        nombre_cliente = cliente.get("nombre") if cliente else None
+
+        candidato = candidato_nombre_pendiente(historial)
+        texto_normalizado_nombre = texto_cliente.lower().strip()
+
+        if candidato and texto_normalizado_nombre in ("si", "sí", "s", "correcto", "exacto", "asi es", "así es"):
+            guardar_nombre(numero_cliente, candidato)
+            nombre_cliente = candidato
+            respuesta = responder(texto_cliente, historial, nombre_cliente)
+
+        elif candidato and texto_normalizado_nombre in ("no", "nop", "nope"):
+            respuesta = "Entendido 😊 ¿Cuál es tu nombre?"
+
+        elif not nombre_cliente and asistente_pidio_nombre(historial):
+            evaluacion = evaluar_nombre(texto_cliente)
+
+            if evaluacion.get("es_nombre"):
+                nombre_recibido = (evaluacion.get("nombre") or texto_cliente).strip()
+                sugerencia = evaluacion.get("sugerencia")
+
+                if sugerencia and sugerencia.strip().lower() != nombre_recibido.lower():
+                    respuesta = f"{sugerencia.strip()}, ¿cierto? 😊"
+                else:
+                    guardar_nombre(numero_cliente, nombre_recibido)
+                    nombre_cliente = nombre_recibido
+                    respuesta = responder(texto_cliente, historial, nombre_cliente)
+            else:
+                respuesta = "¿Cuál es tu nombre? 😊"
+        else:
+            respuesta = responder(texto_cliente, historial, nombre_cliente)
 
         historial_actualizado = historial + [
             {"role": "user", "content": texto_cliente},
