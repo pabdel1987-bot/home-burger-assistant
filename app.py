@@ -189,6 +189,36 @@ def candidato_nombre_pendiente(historial):
     return m.group(1).strip() if m else None
 
 
+
+def extraer_nombre_declarado(texto):
+    """Extrae el candidato cuando el cliente declara su nombre de forma natural."""
+    limpio = (texto or "").strip()
+    patrones = [
+        r"^(?:mi nombre es)\s+(.+?)\s*$",
+        r"^(?:me llamo)\s+(.+?)\s*$",
+        r"^(?:soy)\s+(.+?)\s*$",
+        r"^(?:perd[oó]n[, ]+)?(?:mi nombre es|me llamo|soy)\s+(.+?)\s*$",
+    ]
+    for patron in patrones:
+        m = re.match(patron, limpio, re.IGNORECASE)
+        if m:
+            candidato = m.group(1).strip(" .,!¡¿?")
+            if 1 <= len(candidato.split()) <= 4 and len(candidato) <= 60:
+                return candidato
+    return None
+
+
+def es_correccion_nombre_explicita(texto):
+    t = (texto or "").lower().strip()
+    return (
+        t.startswith("perdón, mi nombre es")
+        or t.startswith("perdon, mi nombre es")
+        or t.startswith("perdón me llamo")
+        or t.startswith("perdon me llamo")
+        or t.startswith("mi nombre es ")
+        or t.startswith("me llamo ")
+    )
+
 def evaluar_nombre(texto):
     prompt = f"""
 El cliente de una hamburguesería acaba de responder a la pregunta por su nombre con:
@@ -693,8 +723,27 @@ async def recibir_whatsapp(request: Request):
 
         candidato = candidato_nombre_pendiente(historial)
         texto_nombre = texto_cliente.lower().strip()
+        nombre_declarado = extraer_nombre_declarado(texto_cliente)
 
-        if candidato and texto_nombre in ("si", "sí", "s", "correcto", "exacto", "asi es", "así es"):
+        # Una declaración explícita de nombre se entiende aunque la pregunta anterior
+        # haya sido otra. También permite corregir un nombre guardado.
+        if nombre_declarado:
+            evaluacion = evaluar_nombre(nombre_declarado)
+            if evaluacion.get("es_nombre"):
+                nombre_recibido = (evaluacion.get("nombre") or nombre_declarado).strip()
+                sugerencia = evaluacion.get("sugerencia")
+                if sugerencia and sugerencia.strip().lower() != nombre_recibido.lower():
+                    respuesta = f"{sugerencia.strip()}, ¿cierto? 😊"
+                else:
+                    guardar_nombre(identificador, nombre_recibido)
+                    nombre_cliente = nombre_recibido
+                    respuesta = responder(
+                        texto_cliente, historial, nombre_cliente, pedido_actual, telefono_ticket
+                    )
+            else:
+                respuesta = "¿Cuál es tu nombre? 😊"
+
+        elif candidato and texto_nombre in ("si", "sí", "s", "correcto", "exacto", "asi es", "así es"):
             guardar_nombre(identificador, candidato)
             nombre_cliente = candidato
             respuesta = responder(
