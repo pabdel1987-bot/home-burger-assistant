@@ -50,7 +50,7 @@ def obtener_o_crear_cliente(telefono):
 def cargar_historial(cliente):
     if not cliente:
         return []
-    bruto = cliente.get("ultimo_pedido")
+    bruto = cliente.get("historial")
     if not bruto:
         return []
     try:
@@ -66,7 +66,7 @@ def guardar_historial(telefono, historial):
         headers=supabase_headers(),
         params={"telefono": f"eq.{telefono}"},
         json={
-            "ultimo_pedido": json.dumps(historial, ensure_ascii=False),
+            "historial": json.dumps(historial, ensure_ascii=False),
             "updated_at": "now()",
         },
         timeout=20,
