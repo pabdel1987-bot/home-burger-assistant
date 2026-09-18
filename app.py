@@ -720,9 +720,31 @@ async def recibir_whatsapp(request: Request):
             else:
                 respuesta = "¿Cuál es tu nombre? 😊"
         else:
-            respuesta = responder(
-                texto_cliente, historial, nombre_cliente, pedido_actual, telefono_ticket
-            )
+            # Los datos obligatorios no quedan a criterio del modelo.
+            # Si el pedido ya está activo y falta el nombre, se pide antes de continuar.
+            if pedido_parece_activo(pedido_actual) and not nombre_cliente:
+                respuesta = "Genial 😊 ¿Cuál es tu nombre?"
+            else:
+                respuesta = responder(
+                    texto_cliente, historial, nombre_cliente, pedido_actual, telefono_ticket
+                )
+
+        # Barrera adicional: si el teléfono ya está disponible, nunca permitimos
+        # que el modelo vuelva a pedirlo.
+        if telefono_ticket and (
+            "me brindas tu número" in respuesta.lower()
+            or "me brindas tu numero" in respuesta.lower()
+            or "compartes tu número" in respuesta.lower()
+            or "compartes tu numero" in respuesta.lower()
+            or "tu número para registrar" in respuesta.lower()
+            or "tu numero para registrar" in respuesta.lower()
+        ):
+            if not nombre_cliente:
+                respuesta = "Genial 😊 ¿Cuál es tu nombre?"
+            else:
+                respuesta = responder(
+                    texto_cliente, historial, nombre_cliente, pedido_actual, telefono_ticket
+                )
 
         # Barrera de seguridad: el modelo no puede confirmar si falta un dato obligatorio.
         if "pedido confirmado" in respuesta.lower():
