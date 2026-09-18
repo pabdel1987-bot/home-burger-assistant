@@ -17,73 +17,153 @@ def supabase_headers():
         "Content-Type": "application/json",
     }
 
-def obtener_cliente(telefono):
+def es_telefono_utilizable(valor):
+    digitos = re.sub(r"\D", "", str(valor or ""))
+    return 9 <= len(digitos) <= 15
+
+
+def normalizar_telefono(valor):
+    return re.sub(r"\D", "", str(valor or ""))
+
+
+def supabase_patch(identificador, datos):
+    payload = {**datos, "updated_at": "now()"}
+    r = requests.patch(
+        f"{SUPABASE_URL}/rest/v1/clientes",
+        headers=supabase_headers(),
+        params={"identificador_whatsapp": f"eq.{identificador}"},
+        json=payload,
+        timeout=20,
+    )
+    r.raise_for_status()
+
+
+def obtener_cliente(identificador):
+    # Primero por el identificador persistente nuevo.
     r = requests.get(
         f"{SUPABASE_URL}/rest/v1/clientes",
         headers=supabase_headers(),
-        params={"telefono": f"eq.{telefono}", "select": "*", "limit": "1"},
+        params={"identificador_whatsapp": f"eq.{identificador}", "select": "*", "limit": "1"},
         timeout=20,
     )
-    if not r.ok:
-        print("SUPABASE ERROR GET:", r.status_code, r.text)
-        r.raise_for_status()
+    r.raise_for_status()
     filas = r.json()
-    return filas[0] if filas else None
+    if filas:
+        return filas[0]
+
+    # Compatibilidad con clientes creados antes de agregar identificador_whatsapp.
+    r = requests.get(
+        f"{SUPABASE_URL}/rest/v1/clientes",
+        headers=supabase_headers(),
+        params={"telefono": f"eq.{identificador}", "select": "*", "limit": "1"},
+        timeout=20,
+    )
+    r.raise_for_status()
+    filas = r.json()
+    if filas:
+        cliente = filas[0]
+        r2 = requests.patch(
+            f"{SUPABASE_URL}/rest/v1/clientes",
+            headers=supabase_headers(),
+            params={"id": f"eq.{cliente['id']}"},
+            json={"identificador_whatsapp": identificador, "updated_at": "now()"},
+            timeout=20,
+        )
+        r2.raise_for_status()
+        cliente["identificador_whatsapp"] = identificador
+        return cliente
+    return None
 
 
-def crear_cliente(telefono):
+def crear_cliente(identificador):
+    payload = {"identificador_whatsapp": identificador}
+    # Si Meta entrega un teléfono utilizable, también sirve para OlaClick.
+    if es_telefono_utilizable(identificador):
+        payload["telefono"] = normalizar_telefono(identificador)
+    else:
+        # Compatibilidad con el esquema actual si telefono todavía exige un valor.
+        payload["telefono"] = identificador
+
     r = requests.post(
         f"{SUPABASE_URL}/rest/v1/clientes",
         headers={**supabase_headers(), "Prefer": "return=representation"},
-        json={"telefono": telefono},
+        json=payload,
         timeout=20,
     )
-    if not r.ok:
-        print("SUPABASE ERROR POST:", r.status_code, r.text)
-        r.raise_for_status()
+    r.raise_for_status()
     filas = r.json()
-    return filas[0] if filas else {"telefono": telefono}
+    return filas[0] if filas else payload
 
-def obtener_o_crear_cliente(telefono):
-    cliente = obtener_cliente(telefono)
-    return cliente if cliente else crear_cliente(telefono)
+
+def obtener_o_crear_cliente(identificador):
+    cliente = obtener_cliente(identificador)
+    return cliente if cliente else crear_cliente(identificador)
+
+
+def cargar_json(campo, cliente, valor_default):
+    if not cliente:
+        return valor_default
+    bruto = cliente.get(campo)
+    if not bruto:
+        return valor_default
+    if isinstance(bruto, (dict, list)):
+        return bruto
+    try:
+        return json.loads(bruto)
+    except (json.JSONDecodeError, TypeError):
+        return valor_default
+
 
 def cargar_historial(cliente):
-    if not cliente:
-        return []
-    bruto = cliente.get("historial")
-    if not bruto:
-        return []
-    try:
-        datos = json.loads(bruto)
-        return datos if isinstance(datos, list) else []
-    except (json.JSONDecodeError, TypeError):
-        return []
+    datos = cargar_json("historial", cliente, [])
+    return datos if isinstance(datos, list) else []
 
-def guardar_historial(telefono, historial):
+
+def cargar_pedido_actual(cliente):
+    datos = cargar_json("pedido_actual", cliente, {})
+    return datos if isinstance(datos, dict) else {}
+
+
+def guardar_historial(identificador, historial):
     historial = historial[-24:]
-    r = requests.patch(
-        f"{SUPABASE_URL}/rest/v1/clientes",
-        headers=supabase_headers(),
-        params={"telefono": f"eq.{telefono}"},
-        json={
-            "historial": json.dumps(historial, ensure_ascii=False),
-            "updated_at": "now()",
+    supabase_patch(
+        identificador,
+        {"historial": json.dumps(historial, ensure_ascii=False)},
+    )
+
+
+def guardar_nombre(identificador, nombre):
+    supabase_patch(identificador, {"nombre": nombre})
+
+
+def guardar_telefono(identificador, telefono):
+    supabase_patch(identificador, {"telefono": normalizar_telefono(telefono)})
+
+
+def guardar_pedido_actual(identificador, pedido):
+    supabase_patch(
+        identificador,
+        {"pedido_actual": json.dumps(pedido, ensure_ascii=False)},
+    )
+
+
+def guardar_ultimo_pedido(identificador, pedido):
+    supabase_patch(
+        identificador,
+        {
+            "ultimo_pedido": json.dumps(pedido, ensure_ascii=False),
+            "pedido_actual": None,
         },
-        timeout=20,
     )
-    r.raise_for_status()
 
 
-def guardar_nombre(telefono, nombre):
-    r = requests.patch(
-        f"{SUPABASE_URL}/rest/v1/clientes",
-        headers=supabase_headers(),
-        params={"telefono": f"eq.{telefono}"},
-        json={"nombre": nombre, "updated_at": "now()"},
-        timeout=20,
-    )
-    r.raise_for_status()
+def mensaje_ya_procesado(cliente, mensaje_id):
+    return bool(mensaje_id and cliente and cliente.get("ultimo_mensaje_id") == mensaje_id)
+
+
+def marcar_mensaje_procesado(identificador, mensaje_id):
+    if mensaje_id:
+        supabase_patch(identificador, {"ultimo_mensaje_id": mensaje_id})
 
 
 def ultimo_texto_asistente(historial):
@@ -114,26 +194,117 @@ def evaluar_nombre(texto):
 El cliente de una hamburguesería acaba de responder a la pregunta por su nombre con:
 {json.dumps(texto, ensure_ascii=False)}
 
-Devuelve SOLO JSON válido con este formato:
+Devuelve SOLO JSON válido:
 {{"es_nombre": true, "nombre": "Nombre", "sugerencia": null}}
 
 Reglas:
-- Si parece claramente un nombre, conserva lo que escribió, corrigiendo solo mayúsculas/minúsculas.
-- Si parece MUY probablemente un error de teclado de un nombre conocido, no lo corrijas silenciosamente:
-  pon en "nombre" exactamente lo escrito y en "sugerencia" el nombre probable.
+- Si parece un nombre, conserva lo escrito corrigiendo solo mayúsculas/minúsculas.
+- Si es MUY probablemente un error de teclado de un nombre conocido, usa "sugerencia".
 - Ejemplo: Jusn -> {{"es_nombre": true, "nombre": "Jusn", "sugerencia": "Juan"}}
-- Si no hay alta certeza de error, sugerencia debe ser null.
-- Si el texto no parece una respuesta de nombre, es_nombre debe ser false.
+- Si no hay alta certeza, sugerencia debe ser null.
+- Si no parece una respuesta de nombre, es_nombre debe ser false.
 """
-    r = client.responses.create(
-        model="gpt-5.4-mini",
-        input=prompt,
-    )
+    r = client.responses.create(model="gpt-5.4-mini", input=prompt)
     try:
-        datos = json.loads(r.output_text.strip())
+        return json.loads(r.output_text.strip())
     except Exception:
         return {"es_nombre": False, "nombre": None, "sugerencia": None}
-    return datos
+
+
+def extraer_estado_pedido(texto, historial, pedido_actual):
+    contexto = historial[-10:] if historial else []
+    prompt = f"""
+Actualiza el estado estructurado de un pedido de Home Burger usando el mensaje nuevo.
+Devuelve SOLO JSON válido. No inventes datos.
+
+ESTADO ANTERIOR:
+{json.dumps(pedido_actual or {}, ensure_ascii=False)}
+
+CONTEXTO RECIENTE:
+{json.dumps(contexto, ensure_ascii=False)}
+
+MENSAJE NUEVO:
+{json.dumps(texto, ensure_ascii=False)}
+
+Campos permitidos:
+{{
+  "productos": [],
+  "modalidad": null,
+  "salsas": null,
+  "bebida": null,
+  "ubicacion": null,
+  "delivery_costo": null,
+  "confirmado": false
+}}
+
+Reglas:
+- Conserva todos los datos anteriores salvo que el cliente los cambie.
+- "recojo" y expresiones equivalentes => modalidad "recojo".
+- "delivery", "me lo envías", etc. => modalidad "delivery".
+- Si ya indicó una salsa, consérvala y no la borres.
+- "sin bebida", "no quiero bebida" => bebida "sin bebida".
+- Si menciona una bebida concreta, guárdala.
+- productos debe contener texto breve suficiente para recordar cantidades, producto y extras.
+- No marques confirmado por tu cuenta; conserva el valor anterior.
+"""
+    r = client.responses.create(model="gpt-5.4-mini", input=prompt)
+    try:
+        datos = json.loads(r.output_text.strip())
+        return datos if isinstance(datos, dict) else (pedido_actual or {})
+    except Exception:
+        return pedido_actual or {}
+
+
+def telefono_visible_para_ticket(cliente, identificador):
+    tel = (cliente or {}).get("telefono")
+    if tel and es_telefono_utilizable(tel):
+        return normalizar_telefono(tel)
+    if es_telefono_utilizable(identificador):
+        return normalizar_telefono(identificador)
+    return None
+
+
+def detectar_telefono_en_texto(texto):
+    candidatos = re.findall(r"(?:\+?\d[\d\s-]{7,}\d)", texto or "")
+    for candidato in candidatos:
+        digitos = normalizar_telefono(candidato)
+        if 9 <= len(digitos) <= 15:
+            return digitos
+    return None
+
+
+def pedido_parece_activo(pedido):
+    return bool(pedido and (pedido.get("productos") or pedido.get("modalidad")))
+
+
+def faltante_bloqueante(pedido, nombre_cliente, telefono_ticket):
+    if not pedido_parece_activo(pedido):
+        return None
+    if not pedido.get("productos"):
+        return "producto"
+    if not pedido.get("modalidad"):
+        return "modalidad"
+    if pedido.get("modalidad") == "delivery":
+        if not pedido.get("ubicacion"):
+            return "ubicacion"
+        if pedido.get("delivery_costo") is None:
+            return "delivery_costo"
+    if not nombre_cliente:
+        return "nombre"
+    if not telefono_ticket:
+        return "telefono"
+    return None
+
+
+def respuesta_para_faltante(faltante):
+    respuestas = {
+        "modalidad": "¿Será delivery o recojo? 😊",
+        "ubicacion": "Compárteme tu ubicación o dirección para calcular el delivery 📍",
+        "delivery_costo": "Déjame confirmar el costo de delivery para darte el total definitivo 😊",
+        "nombre": "Genial 😊 ¿Cuál es tu nombre?",
+        "telefono": "¿Me brindas tu número para registrar tu ticket? 😊",
+    }
+    return respuestas.get(faltante)
 
 
 INSTRUCCIONES = """
@@ -141,6 +312,11 @@ Eres el asistente de atención de Home Burger. Hablas como Home Burger y nunca d
 Responde breve, natural y amable, como WhatsApp. Emojis moderados.
 Lee TODO el historial y usa el contexto. No repitas preguntas ya respondidas.
 No inventes precios, productos, ingredientes, promociones, delivery, tiempos ni condiciones.
+El sistema puede darte un ESTADO ESTRUCTURADO DEL PEDIDO. Trátalo como fuente de verdad.
+No vuelvas a preguntar un dato que ya esté resuelto en ese estado.
+Si el cliente ya indicó salsa o que no quiere bebida desde su primer mensaje, no lo preguntes otra vez.
+Si el sistema indica que el teléfono para ticket ya está disponible, no lo pidas.
+Nunca confirmes si el sistema indica que falta un dato obligatorio.
 
 SALUDO:
 Si el primer mensaje es solo un saludo:
@@ -394,57 +570,48 @@ def extraer_texto(valor):
     return str(valor)
 
 
-def responder(message, history, nombre_cliente=None):
+def responder(message, history, nombre_cliente=None, pedido_actual=None, telefono_ticket=None):
     mensajes = []
 
     for item in history or []:
         if isinstance(item, dict):
             role = item.get("role")
             contenido = extraer_texto(item.get("content", ""))
-
             if role in ("user", "assistant") and contenido:
-                mensajes.append({
-                    "role": role,
-                    "content": contenido
-                })
-
+                mensajes.append({"role": role, "content": contenido})
         elif isinstance(item, (list, tuple)) and len(item) >= 2:
             usuario = extraer_texto(item[0])
             asistente = extraer_texto(item[1])
-
             if usuario:
-                mensajes.append({
-                    "role": "user",
-                    "content": usuario
-                })
-
+                mensajes.append({"role": "user", "content": usuario})
             if asistente:
-                mensajes.append({
-                    "role": "assistant",
-                    "content": asistente
-                })
+                mensajes.append({"role": "assistant", "content": asistente})
 
     mensaje_actual = extraer_texto(message)
+    mensajes.append({"role": "user", "content": mensaje_actual})
 
-    mensajes.append({
-        "role": "user",
-        "content": mensaje_actual
-    })
+    instrucciones_actuales = INSTRUCCIONES + f"""
 
-    instrucciones_actuales = INSTRUCCIONES
-    if nombre_cliente:
-        instrucciones_actuales += f"""
-DATOS PERSISTENTES DEL CLIENTE:
-- Nombre confirmado: {nombre_cliente}
-- No vuelvas a preguntarle su nombre salvo que el propio cliente indique que quiere corregirlo.
+ESTADO ESTRUCTURADO DEL PEDIDO ACTUAL:
+{json.dumps(pedido_actual or {}, ensure_ascii=False)}
+
+DATOS PERSISTENTES:
+- Nombre confirmado: {nombre_cliente or "NO DISPONIBLE"}
+- Teléfono utilizable para ticket: {telefono_ticket or "NO DISPONIBLE"}
+
+REGLAS DE ESTADO:
+- No preguntes nuevamente ningún dato que ya figure en el estado.
+- Si bebida dice "sin bebida", no ofrezcas bebida.
+- Si salsas ya tiene contenido, no vuelvas a preguntar las salsas correspondientes.
+- Si nombre está confirmado, no vuelvas a pedirlo.
+- Si teléfono utilizable está disponible, no vuelvas a pedirlo.
 """
 
     response = client.responses.create(
         model="gpt-5.4-mini",
         instructions=instrucciones_actuales,
-        input=mensajes
+        input=mensajes,
     )
-
     return response.output_text
 
 app = FastAPI()
@@ -499,54 +666,87 @@ async def recibir_whatsapp(request: Request):
         if mensaje.get("type") != "text":
             return {"status": "ok"}
 
-        numero_cliente = mensaje["from"]
+        identificador = mensaje["from"]
+        mensaje_id = mensaje.get("id")
         texto_cliente = mensaje["text"]["body"]
 
-        cliente = obtener_o_crear_cliente(numero_cliente)
+        cliente = obtener_o_crear_cliente(identificador)
+
+        # Evita contestar dos veces al mismo evento de WhatsApp.
+        if mensaje_ya_procesado(cliente, mensaje_id):
+            return {"status": "ok"}
+
         historial = cargar_historial(cliente)
+        pedido_actual = cargar_pedido_actual(cliente)
         nombre_cliente = cliente.get("nombre") if cliente else None
+        telefono_ticket = telefono_visible_para_ticket(cliente, identificador)
+
+        # Si el cliente escribe un teléfono cuando se lo estamos pidiendo, guárdalo.
+        telefono_enviado = detectar_telefono_en_texto(texto_cliente)
+        if telefono_enviado and not telefono_ticket:
+            guardar_telefono(identificador, telefono_enviado)
+            telefono_ticket = telefono_enviado
+
+        # Actualiza el pedido estructurado antes de responder.
+        pedido_actual = extraer_estado_pedido(texto_cliente, historial, pedido_actual)
+        guardar_pedido_actual(identificador, pedido_actual)
 
         candidato = candidato_nombre_pendiente(historial)
-        texto_normalizado_nombre = texto_cliente.lower().strip()
+        texto_nombre = texto_cliente.lower().strip()
 
-        if candidato and texto_normalizado_nombre in ("si", "sí", "s", "correcto", "exacto", "asi es", "así es"):
-            guardar_nombre(numero_cliente, candidato)
+        if candidato and texto_nombre in ("si", "sí", "s", "correcto", "exacto", "asi es", "así es"):
+            guardar_nombre(identificador, candidato)
             nombre_cliente = candidato
-            respuesta = responder(texto_cliente, historial, nombre_cliente)
+            respuesta = responder(
+                texto_cliente, historial, nombre_cliente, pedido_actual, telefono_ticket
+            )
 
-        elif candidato and texto_normalizado_nombre in ("no", "nop", "nope"):
+        elif candidato and texto_nombre in ("no", "nop", "nope"):
             respuesta = "Entendido 😊 ¿Cuál es tu nombre?"
 
         elif not nombre_cliente and asistente_pidio_nombre(historial):
             evaluacion = evaluar_nombre(texto_cliente)
-
             if evaluacion.get("es_nombre"):
                 nombre_recibido = (evaluacion.get("nombre") or texto_cliente).strip()
                 sugerencia = evaluacion.get("sugerencia")
-
                 if sugerencia and sugerencia.strip().lower() != nombre_recibido.lower():
                     respuesta = f"{sugerencia.strip()}, ¿cierto? 😊"
                 else:
-                    guardar_nombre(numero_cliente, nombre_recibido)
+                    guardar_nombre(identificador, nombre_recibido)
                     nombre_cliente = nombre_recibido
-                    respuesta = responder(texto_cliente, historial, nombre_cliente)
+                    respuesta = responder(
+                        texto_cliente, historial, nombre_cliente, pedido_actual, telefono_ticket
+                    )
             else:
                 respuesta = "¿Cuál es tu nombre? 😊"
         else:
-            respuesta = responder(texto_cliente, historial, nombre_cliente)
+            respuesta = responder(
+                texto_cliente, historial, nombre_cliente, pedido_actual, telefono_ticket
+            )
+
+        # Barrera de seguridad: el modelo no puede confirmar si falta un dato obligatorio.
+        if "pedido confirmado" in respuesta.lower():
+            faltante = faltante_bloqueante(pedido_actual, nombre_cliente, telefono_ticket)
+            if faltante:
+                reemplazo = respuesta_para_faltante(faltante)
+                if reemplazo:
+                    respuesta = reemplazo
+            else:
+                pedido_actual["confirmado"] = True
+                guardar_ultimo_pedido(identificador, pedido_actual)
 
         historial_actualizado = historial + [
             {"role": "user", "content": texto_cliente},
             {"role": "assistant", "content": respuesta},
         ]
-        guardar_historial(numero_cliente, historial_actualizado)
+        guardar_historial(identificador, historial_actualizado)
 
         access_token = os.environ["WHATSAPP_ACCESS_TOKEN"]
         phone_number_id = os.environ["WHATSAPP_PHONE_NUMBER_ID"]
         url = f"https://graph.facebook.com/v26.0/{phone_number_id}/messages"
         headers = {
             "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
         texto_normalizado = texto_cliente.lower().strip()
@@ -565,7 +765,7 @@ async def recibir_whatsapp(request: Request):
             "que precios tienen", "qué tienen", "que tienen", "qué venden",
             "que venden", "qué opciones tienen", "que opciones tienen",
             "qué hamburguesas tienen", "que hamburguesas tienen",
-            "qué burgers tienen", "que burgers tienen"
+            "qué burgers tienen", "que burgers tienen",
         ]
         productos_concretos = [
             "consentida", "doradita", "indomable", "soberana",
@@ -573,7 +773,7 @@ async def recibir_whatsapp(request: Request):
             "filete con cheddar", "filete royal", "despeinado",
             "salchi clásica", "salchi clasica", "salchipollo",
             "alitas bbq", "papas clásicas", "papas clasicas",
-            "papas familiares"
+            "papas familiares",
         ]
         enviar_carta = (
             any(frase in texto_normalizado for frase in pedidos_carta)
@@ -581,45 +781,41 @@ async def recibir_whatsapp(request: Request):
         )
 
         if enviar_carta:
-            payload_texto_carta = {
+            payload_texto = {
                 "messaging_product": "whatsapp",
-                "to": numero_cliente,
+                "to": identificador,
                 "type": "text",
-                "text": {"body": "Claro, te envío la carta 🍔"}
+                "text": {"body": "Claro, te envío la carta 🍔"},
             }
-            r_texto_carta = requests.post(
-                url, headers=headers, json=payload_texto_carta, timeout=20
-            )
-            print("WhatsApp texto carta status:", r_texto_carta.status_code)
-            print("WhatsApp texto carta response:", r_texto_carta.text)
-            r_texto_carta.raise_for_status()
+            r1 = requests.post(url, headers=headers, json=payload_texto, timeout=20)
+            r1.raise_for_status()
 
             payload_imagen = {
                 "messaging_product": "whatsapp",
-                "to": numero_cliente,
+                "to": identificador,
                 "type": "image",
-                "image": {"link": "https://home-burger-assistant.onrender.com/carta"}
+                "image": {"link": "https://home-burger-assistant.onrender.com/carta"},
             }
-            r_imagen = requests.post(url, headers=headers, json=payload_imagen, timeout=20)
-            print("WhatsApp imagen status:", r_imagen.status_code)
-            print("WhatsApp imagen response:", r_imagen.text)
-            r_imagen.raise_for_status()
+            r2 = requests.post(url, headers=headers, json=payload_imagen, timeout=20)
+            r2.raise_for_status()
+            marcar_mensaje_procesado(identificador, mensaje_id)
             return {"status": "ok"}
 
         payload = {
             "messaging_product": "whatsapp",
-            "to": numero_cliente,
+            "to": identificador,
             "type": "text",
-            "text": {"body": respuesta}
+            "text": {"body": respuesta},
         }
         r = requests.post(url, headers=headers, json=payload, timeout=20)
-        print("WhatsApp status:", r.status_code)
-        print("WhatsApp response:", r.text)
         r.raise_for_status()
+
+        # Se marca al final: si el envío falla, Meta puede reintentar.
+        marcar_mensaje_procesado(identificador, mensaje_id)
         return {"status": "ok"}
 
     except Exception as e:
-        print("Error WhatsApp:", e)
+        print("Error WhatsApp:", repr(e))
         return {"status": "error"}
 
 demo = gr.ChatInterface(
